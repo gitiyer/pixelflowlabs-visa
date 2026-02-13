@@ -6,14 +6,11 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: [
+          // Standard security headers if needed, but removing COOP/COEP
           {
-            key: "Cross-Origin-Opener-Policy",
-            value: "same-origin",
-          },
-          {
-            key: "Cross-Origin-Embedder-Policy",
-            value: "credentialless",
-          },
+            key: "X-Content-Type-Options",
+            value: "nosniff"
+          }
         ],
       },
     ];
