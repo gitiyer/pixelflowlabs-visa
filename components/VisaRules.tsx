@@ -25,18 +25,20 @@ export default function VisaRules() {
     ];
 
     return (
-        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <Check className="w-6 h-6 text-green-500" />
-                Visa Photo Rules
+        <div className="w-full bg-blue-50/50 border border-blue-100 rounded-xl p-6 mb-8">
+            <h3 className="text-slate-900 font-bold text-sm uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Check className="w-4 h-4 text-blue-600" />
+                Photo Requirements
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {rules.map((rule, index) => (
-                    <div key={index} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
-                        <div className="bg-white p-2 rounded-full shadow-sm">
-                            {rule.icon}
+                    <div key={index} className="flex items-start gap-3">
+                        <div className="mt-0.5">
+                            {rule.type === 'requirement' && <Check className="w-4 h-4 text-green-600" />}
+                            {rule.type === 'forbidden' && <span className="flex items-center justify-center w-4 h-4 rounded-full bg-red-100 text-red-600 text-[10px] font-bold">✕</span>}
+                            {rule.type === 'warning' && <AlertTriangle className="w-4 h-4 text-amber-500" />}
                         </div>
-                        <span className="text-slate-700 font-medium text-sm">{rule.text}</span>
+                        <span className="text-slate-600 text-sm leading-relaxed">{rule.text}</span>
                     </div>
                 ))}
             </div>
