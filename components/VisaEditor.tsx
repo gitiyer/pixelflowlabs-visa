@@ -152,6 +152,8 @@ export default function VisaEditor() {
         try {
             const croppedImage = await getCroppedImg(imageSrc, croppedAreaPixels, rotation);
 
+            if (!croppedImage) return;
+
             // Enforce 600x600 resizing
             const img = new Image();
             img.src = croppedImage;
