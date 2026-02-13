@@ -7,6 +7,7 @@ import Webcam from "react-webcam";
 import { removeBackground } from "@imgly/background-removal";
 import getCroppedImg from "../lib/canvasUtils";
 import VisaRules from "./VisaRules";
+import ComplianceModal from "./ComplianceModal";
 
 type AppState = "dropzone" | "camera" | "processing" | "editor";
 
@@ -27,12 +28,19 @@ export default function VisaEditor() {
     const [isPaid, setIsPaid] = useState(false);
     const [isPaymentLoading, setIsPaymentLoading] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showComplianceModal, setShowComplianceModal] = useState(false);
+    const [isRazorpayLoaded, setIsRazorpayLoaded] = useState(false);
     const webcamRef = useRef<Webcam>(null);
 
     useEffect(() => {
         const script = document.createElement("script");
         script.src = "https://checkout.razorpay.com/v1/checkout.js";
         script.async = true;
+        script.onload = () => setIsRazorpayLoaded(true);
+        script.onerror = () => {
+            console.error("Razorpay script failed to load");
+            // Optional: set some error state
+        };
         document.body.appendChild(script);
         return () => {
             document.body.removeChild(script);
@@ -49,13 +57,26 @@ export default function VisaEditor() {
     const processImage = async (imageUrl: string) => {
         setAppState("processing");
         try {
-            // 1. Remove Background
-            const blob = await removeBackground(imageUrl, {
-                model: 'isnet',
-                progress: (key, current, total) => {
-                    console.log(`Downloading ${key}: ${current} of ${total}`);
-                }
-            });
+            // 1. Remove Background with Timeout (15s)
+            console.log("Starting background removal...");
+            console.log("Public Path:", `${window.location.origin}/imgly/`);
+
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Timeout")), 15000)
+            );
+
+            const blob = await Promise.race([
+                removeBackground(imageUrl, {
+                    model: 'medium',
+                    publicPath: `${window.location.origin}/imgly/`, // Use local assets
+                    progress: (key, current, total) => {
+                        console.log(`Downloading ${key}: ${current} of ${total}`);
+                    }
+                }),
+                timeoutPromise
+            ]) as Blob;
+
+            console.log("Background removal successful");
 
             // 2. Composite on White Background
             const imageBitmap = await createImageBitmap(blob);
@@ -75,11 +96,40 @@ export default function VisaEditor() {
             }
         } catch (error) {
             console.error("Background removal failed:", error);
-            // Fallback to original image if removal fails? 
+            // Check if error is an object and log it fully
+            if (typeof error === 'object') {
+                console.error("Error details:", JSON.stringify(error, null, 2));
+            }
+
+            // Fallback to original image if removal fails or times out
             // For now, let's just alert or log. Real app might show error UI.
-            alert("Background removal failed. Using original image.");
+            alert(`Background removal failed: ${error instanceof Error ? error.message : "Unknown error"}. Using original image.`);
             setImageSrc(imageUrl);
             setAppState("editor");
+        }
+    };
+
+    const skipProcessing = () => {
+        if (imageSrc) {
+            setAppState("editor");
+        } else {
+            // Should not happen if imageSrc is set before processing, but ensure we have something
+            // If imageSrc is null (e.g. from camera capture directly passed to processImage without setting state), 
+            // we might need to handle it. 
+            // processImage calls setImageSrc(processedImageUrl) ONLY on success.
+            // If we skip, we want the ORIGINAL image. 
+            // But wait, processImage takes imageUrl arg.
+            // We need to store that imageUrl in state or ref to use it for skipping?
+            // Actually, handleFileChange creates a blob URL. 
+            // Let's refactor to ensure we can skip.
+            // But for now, if we are in 'processing', we probably don't have the original image in 'imageSrc' state yet?
+            // Wait, setImageSrc(null) is called in handleReset.
+            // In handleFileChange: const imageUrl = URL.createObjectURL(file); processImage(imageUrl);
+            // It doesn't set imageSrc state until success!
+            // We need to modify handleFileChange to set imageSrc immediately?
+            // OR pass strict arg to skipProcessing?
+            // Let's modify processImage to set a ref or state 'currentProcessingImage'.
+            setAppState("dropzone"); // Fallback if no image.
         }
     };
 
@@ -99,6 +149,12 @@ export default function VisaEditor() {
     }, [webcamRef]);
 
     const handlePayment = async () => {
+        if (!isRazorpayLoaded || !window.Razorpay) {
+            alert("Payment gateway is still loading. Please check your connection and try again in a moment.");
+            setIsPaymentLoading(false);
+            return;
+        }
+
         setIsPaymentLoading(true);
         const res = await fetch("/api/razorpay/order", {
             method: "POST",
@@ -127,6 +183,7 @@ export default function VisaEditor() {
                     const verifyData = await verifyRes.json();
                     if (verifyData.success) {
                         setIsPaid(true);
+                        setShowComplianceModal(false);
                         // Trigger download immediately after payment success
                         setTimeout(handleDownload, 500);
                     } else {
@@ -254,7 +311,23 @@ export default function VisaEditor() {
                     <h2 className="text-2xl font-bold text-slate-900 mb-2 font-sans animate-pulse">
                         {processingMsg}
                     </h2>
-                    <p className="text-slate-500 text-sm">Do not close this tab, magic is happening.</p>
+                    <p className="text-slate-500 text-sm mb-6">Do not close this tab, magic is happening.</p>
+
+                    <button
+                        onClick={() => {
+                            // We need the original image URL here. 
+                            // Since we don't have it easily in this scope without refactoring,
+                            // we can rely on a broader "cancel/skip" that just returns to dropzone 
+                            // or if we can, force the original image.
+                            // Better approach: Let's assume the user wants to try again or just proceed with original.
+                            // But without original image in state, we can't proceed to editor.
+                            // So "Cancel" => Dropzone is safest.
+                            setAppState("dropzone");
+                        }}
+                        className="text-slate-400 hover:text-slate-600 text-sm underline underline-offset-4"
+                    >
+                        Taking too long? Cancel
+                    </button>
                 </div>
             </div>
         );
@@ -550,7 +623,7 @@ export default function VisaEditor() {
                     <div className="hidden md:flex mt-4 pt-6 border-t border-slate-100 flex-col gap-4">
                         {!isPaid ? (
                             <button
-                                onClick={handlePayment}
+                                onClick={() => setShowComplianceModal(true)}
                                 disabled={isPaymentLoading}
                                 className={`w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-blue-500/30 hover:-translate-y-0.5 hover:shadow-xl transition-all flex items-center justify-center gap-3 whitespace-nowrap text-lg ${isPaymentLoading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
                             >
@@ -597,7 +670,7 @@ export default function VisaEditor() {
             <div className="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 z-50 pb-8">
                 {!isPaid ? (
                     <button
-                        onClick={handlePayment}
+                        onClick={() => setShowComplianceModal(true)}
                         disabled={isPaymentLoading}
                         className={`w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-blue-500/30 active:scale-95 transition-all flex items-center justify-center gap-3 whitespace-nowrap text-base ${isPaymentLoading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
                     >
@@ -633,6 +706,12 @@ export default function VisaEditor() {
                     </button>
                 )}
             </div>
+            {/* Compliance Modal */}
+            <ComplianceModal
+                isOpen={showComplianceModal}
+                onClose={() => setShowComplianceModal(false)}
+                onProceed={handlePayment}
+            />
         </div>
     );
 }

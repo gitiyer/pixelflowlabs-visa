@@ -9,7 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@imgly/background-removal": "^1.7.0",
+    "@imgly/background-removal": "^1.4.5",
+    "@imgly/background-removal-data": "^1.4.5",
     "lucide-react": "^0.564.0",
     "next": "16.1.6",
     "razorpay": "^2.9.6",
