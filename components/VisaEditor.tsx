@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import Cropper, { Area } from "react-easy-crop";
-import { Upload, ZoomIn, RotateCw, Download, ShieldCheck, X, Camera, Lock, CloudUpload, Sparkles, Ruler } from "lucide-react";
+import { Upload, ZoomIn, RotateCw, Download, ShieldCheck, X, Camera, Lock, CloudUpload, Sparkles, Ruler, Loader2 } from "lucide-react";
 import Webcam from "react-webcam";
 import { removeBackground } from "@imgly/background-removal";
 import getCroppedImg from "../lib/canvasUtils";
@@ -25,6 +25,8 @@ export default function VisaEditor() {
     const [rotation, setRotation] = useState(0);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
     const [isPaid, setIsPaid] = useState(false);
+    const [isPaymentLoading, setIsPaymentLoading] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
     const webcamRef = useRef<Webcam>(null);
 
     useEffect(() => {
@@ -97,6 +99,7 @@ export default function VisaEditor() {
     }, [webcamRef]);
 
     const handlePayment = async () => {
+        setIsPaymentLoading(true);
         const res = await fetch("/api/razorpay/order", {
             method: "POST",
         });
@@ -129,6 +132,12 @@ export default function VisaEditor() {
                     } else {
                         alert("Payment verification failed. Please contact support.");
                     }
+                    setIsPaymentLoading(false);
+                },
+                modal: {
+                    ondismiss: function () {
+                        setIsPaymentLoading(false);
+                    }
                 },
                 prefill: {
                     name: "User Name",
@@ -143,6 +152,7 @@ export default function VisaEditor() {
             rzp1.open();
         } else {
             alert("Failed to create order. Please try again.");
+            setIsPaymentLoading(false);
         }
     };
 
@@ -150,9 +160,13 @@ export default function VisaEditor() {
         if (!imageSrc || !croppedAreaPixels) return;
 
         try {
+            setIsDownloading(true);
             const croppedImage = await getCroppedImg(imageSrc, croppedAreaPixels, rotation);
 
-            if (!croppedImage) return;
+            if (!croppedImage) {
+                setIsDownloading(false);
+                return;
+            }
 
             // Enforce 600x600 resizing
             const img = new Image();
@@ -181,6 +195,8 @@ export default function VisaEditor() {
             }
         } catch (e) {
             console.error(e);
+        } finally {
+            setIsDownloading(false);
         }
     };
 
@@ -190,27 +206,64 @@ export default function VisaEditor() {
         setZoom(1);
         setRotation(0);
         setIsPaid(false); // Reset payment state on new image? Or keep it paid for session? The requirement implies one-time payment for "the download", usually per image. Let's reset.
+        setIsPaymentLoading(false);
+        setIsDownloading(false);
     };
 
     // --- Views ---
 
+    // Dynamic Processing Messages
+    const [processingMsg, setProcessingMsg] = useState("Initializing magic...");
+
+    useEffect(() => {
+        if (appState === "processing") {
+            const messages = [
+                "Scanning pixels...",
+                "Removing bad vibes...",
+                "Adding professional gloss...",
+                "Aligning to US standards...",
+                "Almost there..."
+            ];
+            let i = 0;
+            const interval = setInterval(() => {
+                setProcessingMsg(messages[i % messages.length]);
+                i++;
+            }, 800);
+            return () => clearInterval(interval);
+        }
+    }, [appState]);
+
     if (appState === "processing") {
         return (
-            <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 bg-slate-50">
-                <div className="relative w-20 h-20 mb-8">
-                    <div className="absolute inset-0 border-4 border-slate-200 rounded-full"></div>
-                    <div className="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 relative overflow-hidden h-full min-h-[50vh]">
+                {/* Fun Background Blobs */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-400/20 rounded-full blur-3xl animate-pulse"></div>
+
+                <div className="relative z-10 flex flex-col items-center">
+                    <div className="relative w-24 h-24 mb-8">
+                        {/* Spinning border */}
+                        <div className="absolute inset-0 border-4 border-slate-200 rounded-full"></div>
+                        <div className="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
+
+                        {/* Center Icon */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <Sparkles className="w-8 h-8 text-blue-500 animate-bounce" />
+                        </div>
+                    </div>
+
+                    <h2 className="text-2xl font-bold text-slate-900 mb-2 font-sans animate-pulse">
+                        {processingMsg}
+                    </h2>
+                    <p className="text-slate-500 text-sm">Do not close this tab, magic is happening.</p>
                 </div>
-                <h2 className="text-xl font-bold text-slate-900 mb-2 font-sans">Processing Image</h2>
-                <p className="text-slate-500 text-sm">Removing background & optimizing...</p>
             </div>
         );
     }
 
     if (appState === "camera") {
         return (
-            <div className="flex flex-col items-center justify-center p-4 min-h-[80vh]">
-                <div className="relative w-full max-w-2xl bg-black rounded-2xl overflow-hidden shadow-xl">
+            <div className="flex flex-col items-center justify-center p-4 h-full flex-1">
+                <div className="relative w-full max-w-2xl bg-black rounded-2xl overflow-hidden shadow-2xl ring-8 ring-slate-100">
                     <Webcam
                         audio={false}
                         ref={webcamRef}
@@ -233,7 +286,7 @@ export default function VisaEditor() {
                             <div className="absolute bottom-1/3 left-10 right-10 h-px bg-white/20"></div>
                         </div>
 
-                        <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full">
+                        <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
                             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
                             <span className="text-white text-xs font-bold tracking-widest uppercase">Live Camera</span>
                         </div>
@@ -248,15 +301,15 @@ export default function VisaEditor() {
                         </div>
                         <button
                             onClick={handleCapture}
-                            className="w-20 h-20 rounded-full border-4 border-white shadow-2xl flex items-center justify-center hover:scale-105 transition-transform active:scale-95 bg-white/20 backdrop-blur-sm"
+                            className="w-20 h-20 rounded-full border-4 border-white shadow-2xl flex items-center justify-center hover:scale-110 transition-all active:scale-95 bg-white/20 backdrop-blur-sm group"
                         >
-                            <div className="w-16 h-16 bg-white rounded-full"></div>
+                            <div className="w-16 h-16 bg-white rounded-full group-hover:bg-blue-50 transition-colors"></div>
                         </button>
                     </div>
 
                     <button
                         onClick={() => setAppState("dropzone")}
-                        className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70"
+                        className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 hover:rotate-90 transition-all"
                     >
                         <X className="w-6 h-6" />
                     </button>
@@ -268,112 +321,86 @@ export default function VisaEditor() {
     // State A: Dropzone
     if (appState === "dropzone") {
         return (
-            <div className="max-w-5xl mx-auto p-6 min-h-[80vh] flex flex-col">
-                {/* 1. Hero Section */}
-                <div className="text-center mb-16 pt-8">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold uppercase tracking-wider mb-6">
-                        <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-                        </span>
-                        US Department of State Compliant
-                    </div>
-                    <h1 className="text-4xl md:text-5xl font-bold text-slate-900 mb-6 tracking-tight">
-                        Instant <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">US Visa Photo</span> Generator
-                    </h1>
-                    <p className="text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
-                        Turn any selfie into a perfect 2x2 inch (600x600px) biometric photo. Intelligent background removal and face alignment—processed 100% in your browser.
-                    </p>
-                </div>
+            <div className="flex-1 flex items-start justify-center p-4 pt-4 md:p-8 md:pt-4 bg-slate-50 relative overflow-hidden h-full">
+                {/* Decorative Background Elements */}
+                <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-b from-blue-100/40 to-purple-100/40 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
+                <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-t from-blue-100/40 to-cyan-100/40 rounded-full blur-3xl translate-y-1/3 -translate-x-1/3 pointer-events-none"></div>
 
-                {/* 2. Requirements Box */}
-                <div className="mb-12">
-                    <VisaRules />
-                </div>
+                <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-x-12 items-start md:items-center relative z-10 h-full">
 
-                {/* 3. The App (Upload Cards) */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 md:p-12 flex flex-col items-center justify-center mb-16">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
-                        {/* Option A: Upload */}
-                        <label className="cursor-pointer group relative">
-                            <div className="h-80 bg-slate-50/50 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center p-8 transition-all duration-300 hover:border-blue-500 hover:bg-blue-50/50">
-                                <div className="mb-6 p-4 bg-white rounded-full shadow-sm group-hover:scale-110 transition-transform duration-300">
-                                    <CloudUpload className="w-10 h-10 text-slate-400 group-hover:text-blue-500 transition-colors" />
-                                </div>
-                                <h3 className="text-lg font-bold text-slate-900 mb-2">Upload Photo</h3>
-                                <p className="text-slate-500 text-center text-sm leading-relaxed max-w-[200px]">
-                                    Select a high-quality photo from your device.
-                                </p>
-                                <span className="mt-8 text-xs font-semibold tracking-wider text-blue-600 uppercase border border-blue-200 bg-blue-50 px-4 py-2 rounded-full group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                    Choose File
-                                </span>
-                                <input
-                                    type="file"
-                                    onChange={handleFileChange}
-                                    accept="image/*"
-                                    className="hidden"
-                                />
-                            </div>
-                        </label>
-
-                        {/* Option B: Camera */}
-                        <button
-                            onClick={() => setAppState("camera")}
-                            className="group relative h-80 bg-slate-50/50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center p-8 transition-all duration-300 hover:border-blue-500 hover:bg-blue-50/50 hover:shadow-md"
-                        >
-                            <div className="mb-6 p-4 bg-white rounded-full shadow-sm group-hover:scale-110 transition-transform duration-300">
-                                <Camera className="w-10 h-10 text-slate-400 group-hover:text-blue-500 transition-colors" />
-                            </div>
-                            <h3 className="text-lg font-bold text-slate-900 mb-2">Take Photo</h3>
-                            <p className="text-slate-500 text-center text-sm leading-relaxed max-w-[200px]">
-                                Use your webcam to capture a shot instantly.
-                            </p>
-                            <span className="mt-8 text-xs font-semibold tracking-wider text-slate-600 uppercase border border-slate-200 bg-white px-4 py-2 rounded-full group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all">
-                                Open Camera
+                    {/* 1. Title & Context */}
+                    {/* Mobile: Order 1. Desktop: Col 1-5, Row 1 */}
+                    <div className="order-1 md:col-span-5 md:row-start-1 flex flex-col items-start text-left">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold uppercase tracking-wider mb-4 hover:scale-105 transition-transform cursor-default">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
                             </span>
-                        </button>
-                    </div>
-
-                    <div className="mt-12 flex items-center justify-center gap-2 text-slate-400 text-xs font-semibold uppercase tracking-wider">
-                        <ShieldCheck className="w-4 h-4" />
-                        <span>Secure Local Processing • No Server Uploads</span>
-                    </div>
-                </div>
-
-                {/* 4. Why Us Section */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-                    {/* Feature 1 */}
-                    <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
-                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-4 text-blue-600">
-                            <ShieldCheck className="w-6 h-6" />
+                            US Department of State Compliant
                         </div>
-                        <h3 className="text-lg font-bold text-slate-900 mb-2">Privacy First</h3>
-                        <p className="text-slate-600 text-sm leading-relaxed">
-                            Your photo never touches a server. All processing happens locally on your device for maximum security.
+                        <h1 className="text-2xl md:text-5xl font-bold text-slate-900 mb-4 tracking-tight leading-tight">
+                            Instant <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 animate-gradient">US Visa Photo</span>
+                        </h1>
+                        <p className="text-base md:text-lg text-slate-600 mb-2 md:mb-8 leading-relaxed hidden md:block">
+                            Turn any selfie into a perfect 2x2 inch biometric photo. Intelligent background removal and face alignment.
                         </p>
                     </div>
 
-                    {/* Feature 2 */}
-                    <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
-                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-4 text-purple-600">
-                            <Sparkles className="w-6 h-6" />
+                    {/* 2. The Workspace (Card) */}
+                    {/* Mobile: Order 2. Desktop: Col 7-12, Row 1+2 (Spanning) */}
+                    <div className="order-2 md:col-span-7 md:row-start-1 md:row-span-2 w-full">
+                        <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 p-6 md:p-8 border border-white relative overflow-hidden">
+                            {/* Card Shine Effect */}
+                            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/40 to-transparent pointer-events-none"></div>
+
+                            <div className="grid grid-cols-2 gap-4 relative z-10">
+                                {/* Option A: Upload */}
+                                <label className="cursor-pointer group relative">
+                                    <div className="h-32 md:h-64 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center p-4 transition-all duration-300 hover:border-blue-500 hover:bg-blue-50/50 hover:scale-[1.02] hover:-rotate-1 hover:shadow-lg">
+                                        <div className="mb-2 md:mb-3 p-2 md:p-3 bg-white rounded-full shadow-sm group-hover:scale-110 transition-transform duration-300 group-hover:ring-4 ring-blue-100">
+                                            <CloudUpload className="w-5 h-5 md:w-8 md:h-8 text-slate-400 group-hover:text-blue-500 transition-colors group-hover:animate-bounce" />
+                                        </div>
+                                        <h3 className="text-sm md:text-lg font-bold text-slate-900 mb-0.5 md:mb-1">Upload</h3>
+                                        <span className="text-[10px] md:text-xs font-semibold tracking-wider text-blue-600 uppercase group-hover:underline">
+                                            Select File
+                                        </span>
+                                        <input
+                                            type="file"
+                                            onChange={handleFileChange}
+                                            accept="image/*"
+                                            className="hidden"
+                                        />
+                                    </div>
+                                </label>
+
+                                {/* Option B: Camera */}
+                                <button
+                                    onClick={() => setAppState("camera")}
+                                    className="group relative h-32 md:h-64 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center p-4 transition-all duration-300 hover:border-purple-500 hover:bg-purple-50/50 hover:scale-[1.02] hover:rotate-1 hover:shadow-lg"
+                                >
+                                    <div className="mb-2 md:mb-3 p-2 md:p-3 bg-white rounded-full shadow-sm group-hover:scale-110 transition-transform duration-300 group-hover:ring-4 ring-purple-100">
+                                        <Camera className="w-5 h-5 md:w-8 md:h-8 text-slate-400 group-hover:text-purple-500 transition-colors group-hover:animate-pulse" />
+                                    </div>
+                                    <h3 className="text-sm md:text-lg font-bold text-slate-900 mb-0.5 md:mb-1">Camera</h3>
+                                    <span className="text-[10px] md:text-xs font-semibold tracking-wider text-slate-600 uppercase group-hover:text-purple-600 group-hover:underline">
+                                        Open Cam
+                                    </span>
+                                </button>
+                            </div>
+
+                            <div className="mt-6 flex items-center justify-center gap-2 text-slate-400 text-[10px] font-semibold uppercase tracking-wider">
+                                <ShieldCheck className="w-3 h-3 group-hover:text-green-500 transition-colors" />
+                                <span>No Server Uploads</span>
+                            </div>
                         </div>
-                        <h3 className="text-lg font-bold text-slate-900 mb-2">AI Background Removal</h3>
-                        <p className="text-slate-600 text-sm leading-relaxed">
-                            Don&apos;t have a white wall? No problem. We automatically replace messy backgrounds with pure white.
-                        </p>
                     </div>
 
-                    {/* Feature 3 */}
-                    <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
-                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mb-4 text-green-600">
-                            <Ruler className="w-6 h-6" />
-                        </div>
-                        <h3 className="text-lg font-bold text-slate-900 mb-2">Guaranteed Specs</h3>
-                        <p className="text-slate-600 text-sm leading-relaxed">
-                            We crop to the exact head-size and eye-level requirements mandated by US Immigration.
-                        </p>
+                    {/* 3. Rules */}
+                    {/* Mobile: Order 3. Desktop: Col 1-5, Row 2 */}
+                    <div className="order-3 md:col-span-5 md:row-start-2 w-full">
+                        <VisaRules />
                     </div>
+
                 </div>
             </div>
         );
@@ -381,9 +408,9 @@ export default function VisaEditor() {
 
     // State B: Editor
     return (
-        <div className="max-w-6xl mx-auto p-4 md:p-8 min-h-[85vh] flex flex-col">
-            {/* Header: Back Button & Title */}
-            <div className="flex items-center justify-between mb-8">
+        <div className="max-w-6xl mx-auto md:p-8 min-h-[85vh] flex flex-col pb-24 md:pb-0">
+            {/* Header: Back Button & Title - Desktop Only */}
+            <div className="hidden md:flex items-center justify-between mb-8">
                 <button
                     onClick={handleReset}
                     className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors text-sm font-medium"
@@ -394,12 +421,21 @@ export default function VisaEditor() {
                     <h2 className="text-xl font-bold text-slate-900">Adjust & Crop</h2>
                     <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-1">Step 2 of 3</p>
                 </div>
-                <div className="w-16"></div> {/* Spacer for centering */}
+                <div className="w-16"></div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start h-full">
+            {/* Mobile Header */}
+            <div className="md:hidden flex items-center justify-between p-4 bg-white border-b sticky top-0 z-40">
+                <button onClick={handleReset} className="p-2 -ml-2 text-slate-600">
+                    <X className="w-6 h-6" />
+                </button>
+                <span className="font-bold text-slate-900">Edit Photo</span>
+                <div className="w-8"></div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 md:gap-8 items-start h-full">
                 {/* Left Column: Immersive Canvas */}
-                <div className="lg:col-span-8 bg-slate-100 rounded-3xl overflow-hidden shadow-inner border border-slate-200 relative aspect-[4/3] lg:aspect-auto lg:h-[600px] group">
+                <div className="lg:col-span-8 bg-slate-100 md:rounded-3xl overflow-hidden shadow-inner border-y md:border border-slate-200 relative aspect-square md:aspect-auto md:h-[600px] group">
                     <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:16px_16px] opacity-20 pointer-events-none"></div>
 
                     <Cropper
@@ -414,7 +450,7 @@ export default function VisaEditor() {
                         onRotationChange={setRotation}
                         showGrid={true}
                         classes={{
-                            containerClassName: "rounded-3xl",
+                            containerClassName: "md:rounded-3xl",
                             mediaClassName: "",
                         }}
                     />
@@ -435,17 +471,13 @@ export default function VisaEditor() {
                             </div>
                         </div>
                     </div>
-
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm border border-slate-200 px-4 py-2 rounded-full shadow-sm text-xs font-medium text-slate-600 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                        Drag to reposition image
-                    </div>
                 </div>
 
                 {/* Right Column: Professional Controls Panel */}
-                <div className="lg:col-span-4 bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-xl shadow-slate-200/50 flex flex-col gap-8 sticky top-8">
+                <div className="lg:col-span-4 bg-white p-6 md:p-8 md:rounded-3xl md:border border-slate-200 md:shadow-xl shadow-slate-200/50 flex flex-col gap-8 md:sticky top-8">
 
-                    {/* Instructions */}
-                    <div className="pb-6 border-b border-slate-100">
+                    {/* Instructions - Desktop */}
+                    <div className="hidden md:block pb-6 border-b border-slate-100">
                         <div className="flex items-center gap-2 mb-3">
                             <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
                                 <RotateCw className="w-4 h-4" />
@@ -458,7 +490,7 @@ export default function VisaEditor() {
                     </div>
 
                     {/* Controls */}
-                    <div className="space-y-8">
+                    <div className="space-y-8 pt-4 md:pt-0">
                         {/* Zoom */}
                         <div className="group">
                             <div className="flex justify-between items-center mb-4">
@@ -508,40 +540,98 @@ export default function VisaEditor() {
                                     className="w-full z-10 relative"
                                 />
                                 <div className="absolute left-0 right-0 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                    {/* Center based progress for rotation */}
-                                    {/* Simplified for standard left-to-right visual for now */}
                                     <div className="h-full bg-purple-500 transition-all opacity-50" style={{ width: `${((rotation + 45) / 90) * 100}%` }}></div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Footer Actions */}
-                    <div className="mt-4 pt-6 border-t border-slate-100 flex flex-col gap-4">
+                    {/* Footer Actions - Desktop */}
+                    <div className="hidden md:flex mt-4 pt-6 border-t border-slate-100 flex-col gap-4">
                         {!isPaid ? (
                             <button
                                 onClick={handlePayment}
-                                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-blue-500/30 hover:-translate-y-0.5 hover:shadow-xl transition-all flex items-center justify-center gap-3 whitespace-nowrap text-lg"
+                                disabled={isPaymentLoading}
+                                className={`w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-blue-500/30 hover:-translate-y-0.5 hover:shadow-xl transition-all flex items-center justify-center gap-3 whitespace-nowrap text-lg ${isPaymentLoading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
                             >
-                                <Lock className="w-5 h-5 text-white/90" />
-                                Unlock & Download (₹99)
+                                {isPaymentLoading ? (
+                                    <>
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        Processing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Lock className="w-5 h-5 text-white/90" />
+                                        Unlock & Download (₹99)
+                                    </>
+                                )}
                             </button>
                         ) : (
                             <button
                                 onClick={handleDownload}
-                                className="w-full bg-slate-900 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 text-lg"
+                                disabled={isDownloading}
+                                className={`w-full bg-slate-900 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 text-lg ${isDownloading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
                             >
-                                <Download className="w-5 h-5" />
-                                Download High-Res
+                                {isDownloading ? (
+                                    <>
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        Downloading...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Download className="w-5 h-5" />
+                                        Download High-Res
+                                    </>
+                                )}
                             </button>
                         )}
-
                         <div className="flex items-center justify-center gap-2 opacity-50">
                             <ShieldCheck className="w-3 h-3 text-slate-400" />
                             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">SECURE & PRIVATE PROCESSING</span>
                         </div>
                     </div>
                 </div>
+            </div>
+
+            {/* Mobile Sticky Footer Action */}
+            <div className="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 z-50 pb-8">
+                {!isPaid ? (
+                    <button
+                        onClick={handlePayment}
+                        disabled={isPaymentLoading}
+                        className={`w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-blue-500/30 active:scale-95 transition-all flex items-center justify-center gap-3 whitespace-nowrap text-base ${isPaymentLoading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
+                    >
+                        {isPaymentLoading ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Processing...
+                            </>
+                        ) : (
+                            <>
+                                <Lock className="w-4 h-4 text-white/90" />
+                                Unlock & Download (₹99)
+                            </>
+                        )}
+                    </button>
+                ) : (
+                    <button
+                        onClick={handleDownload}
+                        disabled={isDownloading}
+                        className={`w-full bg-slate-900 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 text-base ${isDownloading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
+                    >
+                        {isDownloading ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Downloading...
+                            </>
+                        ) : (
+                            <>
+                                <Download className="w-4 h-4" />
+                                Download High-Res
+                            </>
+                        )}
+                    </button>
+                )}
             </div>
         </div>
     );
